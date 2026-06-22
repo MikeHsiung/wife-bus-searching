@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>紅線公車｜附近往淡水信義線的車</title>
+<style>
+  :root{
+    --red:#D8202F;        /* 淡水信義線識別紅（招牌色） */
+    --red-deep:#A6121E;
+    --ink:#17171B;
+    --slate:#6B7079;
+    --line:#ECE9E2;
+    --paper:#FAF8F3;
+    --card:#FFFFFF;
+    --go:#1E9E64;         /* 即將進站：功能性提示 */
+    --shadow:0 1px 2px rgba(20,20,25,.06),0 6px 18px rgba(20,20,25,.06);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif;
+    background:var(--paper);color:var(--ink);
+    line-height:1.5;-webkit-font-smoothing:antialiased;
+    padding:env(safe-area-inset-top) 0 calc(24px + env(safe-area-inset-bottom));
+  }
+  .wrap{max-width:520px;margin:0 auto;padding:0 18px}
+
+  /* 標題 */
+  header{padding:26px 0 18px}
+  .eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:13px;letter-spacing:.04em;color:var(--slate);font-weight:600}
+  .eyebrow .dot{width:11px;height:11px;border-radius:50%;background:var(--red);box-shadow:0 0 0 3px rgba(216,32,47,.16)}
+  h1{font-size:30px;line-height:1.12;margin:.32em 0 .16em;font-weight:800;letter-spacing:-.01em}
+  .sub{color:var(--slate);font-size:15px;margin:0;max-width:34ch}
+
+  /* 主要動作 */
+  .go-btn{
+    width:100%;border:0;cursor:pointer;margin-top:20px;
+    background:var(--red);color:#fff;border-radius:16px;
+    padding:18px 20px;font-size:18px;font-weight:800;font-family:inherit;
+    display:flex;align-items:center;justify-content:center;gap:10px;
+    box-shadow:0 8px 22px rgba(216,32,47,.28);transition:transform .08s ease,background .15s ease;
+  }
+  .go-btn:active{transform:scale(.985);background:var(--red-deep)}
+  .go-btn[disabled]{opacity:.6;box-shadow:none}
+  .go-btn .spin{width:18px;height:18px;border:2.5px solid rgba(255,255,255,.45);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  .status{margin:14px 2px 0;font-size:13.5px;color:var(--slate);min-height:18px}
+
+  /* 結果：一條紅線，公車像掛在線上的車站 */
+  .results{position:relative;margin:26px 0 0;padding-left:26px}
+  .results::before{content:"";position:absolute;left:6px;top:8px;bottom:8px;width:3px;border-radius:3px;
+    background:linear-gradient(var(--red),var(--red-deep))}
+  .results.empty::before{display:none}
+
+  .card{position:relative;background:var(--card);border:1px solid var(--line);border-radius:14px;
+    padding:14px 16px;margin-bottom:14px;box-shadow:var(--shadow);
+    display:flex;align-items:center;gap:14px;animation:rise .32s ease both}
+  .card::before{content:"";position:absolute;left:-23px;top:50%;transform:translateY(-50%);
+    width:13px;height:13px;border-radius:50%;background:#fff;border:3.5px solid var(--red)}
+  @keyframes rise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+  /* 定位模式切換 */
+  .locmode{margin-top:18px}
+  .seg{display:flex;background:#fff;border:1px solid var(--line);border-radius:12px;padding:4px;gap:4px;box-shadow:var(--shadow)}
+  .seg-btn{flex:1;border:0;background:transparent;font-family:inherit;font-size:15px;font-weight:700;color:var(--slate);padding:10px;border-radius:9px;cursor:pointer;transition:background .15s ease,color .15s ease}
+  .seg-btn.active{background:var(--ink);color:#fff}
+  .manual-box{display:flex;gap:10px;margin-top:12px;animation:rise .25s ease both}
+  .manual-box>div{flex:1}
+  .manual-box label{display:block;font-size:12px;font-weight:700;color:var(--slate);margin:0 0 5px 2px}
+  .manual-box input{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;font-size:15px;font-family:inherit;background:#fff;font-variant-numeric:tabular-nums}
+
+  .badge{flex:0 0 auto;min-width:52px;height:40px;padding:0 10px;border-radius:9px;
+    background:var(--red);color:#fff;font-weight:800;font-size:17px;
+    display:flex;align-items:center;justify-content:center;letter-spacing:.01em}
+  .mid{flex:1 1 auto;min-width:0}
+  .stop{font-weight:700;font-size:16px;line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .meta{font-size:13px;color:var(--slate);margin-top:3px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+  .mrt{display:inline-flex;align-items:center;gap:5px}
+  .mrt::before{content:"";width:9px;height:9px;border-radius:50%;background:var(--red)}
+  .eta{flex:0 0 auto;text-align:right;min-width:62px}
+  .eta .num{font-size:30px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+  .eta .unit{font-size:12px;color:var(--slate);font-weight:600}
+  .eta.soon .num{color:var(--go)}
+  .eta.soon .unit{color:var(--go)}
+
+  /* 空狀態 / 計程車建議 */
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;box-shadow:var(--shadow);margin-top:6px}
+  .panel h2{font-size:17px;margin:0 0 4px;font-weight:800}
+  .panel p{margin:0 0 12px;color:var(--slate);font-size:14px}
+  .taxi-list{list-style:none;margin:0;padding:0}
+  .taxi-list li{display:flex;justify-content:space-between;align-items:center;padding:11px 0;border-top:1px solid var(--line);font-size:15px}
+  .taxi-list li:first-child{border-top:0}
+  .taxi-list .d{color:var(--slate);font-size:13.5px;font-variant-numeric:tabular-nums}
+
+  .error{border-color:#f3c9cd;background:#fff5f5}
+  .error h2{color:var(--red-deep)}
+
+  /* 設定（金鑰 / 手動位置） */
+  footer{margin-top:30px;text-align:center;font-size:12.5px;color:var(--slate)}
+  footer a{color:var(--slate);text-decoration:underline;cursor:pointer}
+  .settings{margin-top:16px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;box-shadow:var(--shadow);display:none}
+  .settings.open{display:block}
+  .settings label{display:block;font-size:13px;font-weight:700;margin:10px 0 5px}
+  .settings input{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;font-size:15px;font-family:inherit;background:#fff}
+  .settings .row{display:flex;gap:10px}
+  .settings .row>div{flex:1}
+  .save{margin-top:14px;width:100%;border:0;background:var(--ink);color:#fff;border-radius:11px;padding:13px;font-weight:700;font-size:15px;cursor:pointer;font-family:inherit}
+  .hint{font-size:12px;color:var(--slate);margin-top:8px;line-height:1.45}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <span class="eyebrow"><span class="dot"></span>淡水信義線 · 即時公車</span>
+    <h1>附近往紅線的車</h1>
+    <p class="sub">按一下，用你現在的位置找出附近哪些公車能往紅線捷運站方向搭，以及還有幾分鐘進站。</p>
+  </header>
+
+  <div class="locmode">
+    <div class="seg" id="seg">
+      <button class="seg-btn active" data-mode="gps">📍 GPS 定位</button>
+      <button class="seg-btn" data-mode="manual">✏️ 手動座標</button>
+    </div>
+    <div id="manualBox" class="manual-box" hidden>
+      <div><label>緯度</label><input id="mlat" value="25.1047732" inputmode="decimal"></div>
+      <div><label>經度</label><input id="mlon" value="121.5141796" inputmode="decimal"></div>
+    </div>
+  </div>
+
+  <button id="go" class="go-btn">🔴&nbsp; 查附近的車</button>
+  <div id="status" class="status"></div>
+
+  <div id="results" class="results" hidden></div>
+  <div id="panel" hidden></div>
+
+  <div id="settings" class="settings">
+    <label>TDX Client Id</label>
+    <input id="cid" placeholder="貼上 Client Id" autocomplete="off">
+    <label>TDX Client Secret</label>
+    <input id="csec" placeholder="貼上 Client Secret" autocomplete="off">
+    <button id="save" class="save">儲存設定</button>
+    <p class="hint">金鑰只存在這支手機的瀏覽器裡，不會上傳。位置請用上方的「GPS 定位／手動座標」切換。</p>
+  </div>
+
+  <footer>
+    資料來源：交通部 TDX · <a id="toggleSettings">設定</a>
+  </footer>
+</div>
+
+<script>
+/* ====== 可在部署前先填好金鑰，老婆開了就能用、不用再輸入 ====== */
+const CONFIG = {
+  CLIENT_ID: "",       // ← 在這裡貼上你的 TDX Client Id（填了她就免設定）
+  CLIENT_SECRET: "",   // ← 在這裡貼上你的 TDX Client Secret
+  // 拿不到 GPS 時，預設使用的地點：文承路26號（北士科）
+  DEFAULT_LAT: 25.1047732,
+  DEFAULT_LON: 121.5141796,
+};
+
+/* ====== 參數 ====== */
+const TOKEN_URL = "https://tdx.transportdata.tw/auth/realms/TDXConnect/protocol/openid-connect/token";
+const BASE = "https://tdx.transportdata.tw/api/basic";
+const CITY = "Taipei";          // 台北市；新北市的公車改成 "NewTaipei"
+const RED_PREFIX = "R";         // 淡水信義線捷運站代碼皆以 R 開頭
+const SEARCH_RADIUS_M = 400;    // 搜尋附近公車站半徑
+const MRT_MATCH_M = 200;        // 公車站離捷運站多近算「到得了」
+const MAX_ETA_MIN = 60;         // 只列 N 分鐘內進站的車
+
+/* ====== 小工具 ====== */
+const $ = s => document.querySelector(s);
+const safeLS = {
+  get(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } },
+  set(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
+};
+let MEM = {};
+function getKeys(){
+  return {
+    id: CONFIG.CLIENT_ID || safeLS.get("tdx_id") || MEM.id || "",
+    secret: CONFIG.CLIENT_SECRET || safeLS.get("tdx_secret") || MEM.secret || "",
+  };
+}
+function haversine(la1,lo1,la2,lo2){
+  const R=6371000,r=Math.PI/180;
+  const dphi=(la2-la1)*r, dl=(lo2-lo1)*r;
+  const a=Math.sin(dphi/2)**2+Math.cos(la1*r)*Math.cos(la2*r)*Math.sin(dl/2)**2;
+  return 2*R*Math.asin(Math.sqrt(a));
+}
+function setStatus(t){ $("#status").textContent = t || ""; }
+
+/* ====== TDX ====== */
+let _token=null, _exp=0;
+async function getToken(){
+  if(_token && Date.now() < _exp-60000) return _token;
+  const {id,secret}=getKeys();
+  if(!id||!secret) throw {kind:"nokey"};
+  const body=new URLSearchParams({grant_type:"client_credentials",client_id:id,client_secret:secret});
+  let r;
+  try{
+    r=await fetch(TOKEN_URL,{method:"POST",headers:{"content-type":"application/x-www-form-urlencoded"},body});
+  }catch(e){ throw {kind:"network",where:"取得 token",detail:String((e&&e.message)||e)}; }
+  if(!r.ok) throw {kind:"auth",status:r.status};
+  const j=await r.json();
+  _token=j.access_token; _exp=Date.now()+ (j.expires_in||86400)*1000;
+  return _token;
+}
+async function tdx(path,params){
+  const token=await getToken();
+  const q=new URLSearchParams(params||{}); q.set("$format","JSON");
+  let r;
+  try{
+    r=await fetch(BASE+path+"?"+q.toString(),{headers:{authorization:"Bearer "+token}});
+  }catch(e){ throw {kind:"network",where:path,detail:String((e&&e.message)||e)}; }
+  if(r.status===429) throw {kind:"rate"};
+  if(!r.ok) throw {kind:"api",status:r.status,path};
+  return r.json();
+}
+async function getRedStations(){
+  const data=await tdx("/v2/Rail/Metro/Station/TRTC");
+  const out=[];
+  for(const s of data){
+    const id=s.StationID||"";
+    if(!id.startsWith(RED_PREFIX)) continue;
+    const p=s.StationPosition||{};
+    if(p.PositionLat&&p.PositionLon)
+      out.push({name:(s.StationName&&s.StationName.Zh_tw)||id,lat:p.PositionLat,lon:p.PositionLon});
+  }
+  return out;
+}
+async function getNearbyETAs(lat,lon,radius){
+  const sf=`nearby(${lat.toFixed(6)}, ${lon.toFixed(6)}, ${Math.round(radius)})`;
+  return tdx("/v2/Bus/EstimatedTimeOfArrival/NearBy",{$spatialFilter:sf,$top:200});
+}
+const _sorCache={};
+async function getStopOfRoute(route){
+  if(_sorCache[route]) return _sorCache[route];
+  let res={};
+  try{
+    const data=await tdx("/v2/Bus/StopOfRoute/City/"+CITY+"/"+encodeURIComponent(route),{$top:50});
+    for(const e of data){
+      const dir=e.Direction??0;
+      res[dir]=(e.Stops||[]).map(st=>{
+        const p=st.StopPosition||{};
+        return {uid:st.StopUID,name:(st.StopName&&st.StopName.Zh_tw)||"",seq:st.StopSequence,lat:p.PositionLat,lon:p.PositionLon};
+      });
+    }
+  }catch(e){ res={}; }
+  _sorCache[route]=res;
+  return res;
+}
+function reachesRedAfter(stops,boardSeq,red){
+  let best=null;
+  for(const st of stops){
+    if(st.seq==null||boardSeq==null||st.seq<=boardSeq) continue;
+    if(st.lat==null||st.lon==null) continue;
+    for(const m of red){
+      if(haversine(st.lat,st.lon,m.lat,m.lon)<=MRT_MATCH_M){
+        const ride=st.seq-boardSeq;
+        if(!best||ride<best.ride) best={mrt:m.name,ride};
+      }
+    }
+  }
+  return best;
+}
+
+/* ====== 定位 ====== */
+let locMode="gps";
+function getPosition(){
+  if(locMode==="manual"){
+    const mlat=parseFloat($("#mlat").value), mlon=parseFloat($("#mlon").value);
+    if(!isNaN(mlat)&&!isNaN(mlon)) return Promise.resolve({lat:mlat,lon:mlon,manual:true});
+    // 手動模式但座標沒填好 → 退回預設地點
+    if(CONFIG.DEFAULT_LAT&&CONFIG.DEFAULT_LON)
+      return Promise.resolve({lat:CONFIG.DEFAULT_LAT,lon:CONFIG.DEFAULT_LON,fallback:true});
+    return Promise.resolve(null);
+  }
+  // GPS 模式
+  return new Promise((resolve)=>{
+    const fallback=()=>{
+      if(CONFIG.DEFAULT_LAT&&CONFIG.DEFAULT_LON)
+        resolve({lat:CONFIG.DEFAULT_LAT,lon:CONFIG.DEFAULT_LON,fallback:true});
+      else resolve(null);
+    };
+    if(!navigator.geolocation) return fallback();
+    navigator.geolocation.getCurrentPosition(
+      p=>resolve({lat:p.coords.latitude,lon:p.coords.longitude}),
+      ()=>fallback(),
+      {enableHighAccuracy:true,timeout:12000,maximumAge:30000}
+    );
+  });
+}
+
+/* ====== 主流程 ====== */
+async function run(){
+  const btn=$("#go");
+  $("#results").hidden=true; $("#panel").hidden=true; $("#results").innerHTML=""; $("#panel").innerHTML="";
+  btn.disabled=true; btn.innerHTML='<span class="spin"></span> 搜尋中…';
+  try{
+    if(!getKeys().id){ openSettings(); throw {kind:"nokey"}; }
+    setStatus("定位中…");
+    const pos=await getPosition();
+    if(!pos) throw {kind:"geo"};
+    setStatus(pos.manual?"使用手動座標…":pos.fallback?"GPS 不可用，改用預設地點（文承路26號）查詢…":"已定位，查詢附近公車…");
+
+    const [red,etas]=await Promise.all([getRedStations(), getNearbyETAs(pos.lat,pos.lon,SEARCH_RADIUS_M)]);
+
+    // 每個(路線,方向,站牌)取最近一班
+    const cand=new Map();
+    for(const e of etas){
+      if((e.StopStatus??0)!==0) continue;
+      const eta=e.EstimateTime;
+      if(eta==null||eta>MAX_ETA_MIN*60) continue;
+      const route=(e.RouteName&&e.RouteName.Zh_tw)||"";
+      const key=[route,e.Direction??0,e.StopUID||"",(e.StopName&&e.StopName.Zh_tw)||"",e.StopSequence].join("|");
+      if(!cand.has(key)||eta<cand.get(key).eta)
+        cand.set(key,{route,dir:e.Direction??0,uid:e.StopUID||"",stop:(e.StopName&&e.StopName.Zh_tw)||"",seq:e.StopSequence,eta});
+    }
+
+    // 補各路線站序（去重、並行）
+    const routes=[...new Set([...cand.values()].map(c=>c.route))];
+    await Promise.all(routes.map(getStopOfRoute));
+
+    const results=[];
+    for(const c of cand.values()){
+      const stops=(_sorCache[c.route]||{})[c.dir]||[];
+      let boardPos=null, boardSeq=c.seq;
+      for(const st of stops){ if(st.uid===c.uid){ boardPos=st; if(boardSeq==null) boardSeq=st.seq; break; } }
+      const hit=reachesRedAfter(stops,boardSeq,red);
+      if(!hit) continue;
+      const walk=boardPos&&boardPos.lat?haversine(pos.lat,pos.lon,boardPos.lat,boardPos.lon):null;
+      results.push({route:c.route,stop:c.stop,etaMin:Math.round(c.eta/60),mrt:hit.mrt,ride:hit.ride,walk});
+    }
+
+    if(!results.length){ renderEmpty(pos,red); return; }
+    results.sort((a,b)=>((a.walk??9999)-(b.walk??9999))||(a.etaMin-b.etaMin));
+    renderResults(results);
+    setStatus(`找到 ${results.length} 個選擇 · ${new Date().toLocaleTimeString("zh-TW",{hour:"2-digit",minute:"2-digit"})} 更新`);
+  }catch(err){
+    renderError(err);
+  }finally{
+    btn.disabled=false; btn.innerHTML='🔴&nbsp; 重新查詢';
+  }
+}
+
+/* ====== 畫面 ====== */
+function renderResults(list){
+  const box=$("#results"); box.className="results"; box.hidden=false;
+  box.innerHTML=list.map(r=>{
+    const soon=r.etaMin<=1;
+    const walk=r.walk!=null?`走路約 ${Math.round(r.walk)} 公尺`:"附近站牌";
+    return `<div class="card">
+      <div class="badge">${escapeHtml(r.route)}</div>
+      <div class="mid">
+        <div class="stop">${escapeHtml(r.stop)}</div>
+        <div class="meta"><span>${walk}</span>·<span class="mrt">到 ${escapeHtml(r.mrt)}站 · 約坐 ${r.ride} 站</span></div>
+      </div>
+      <div class="eta ${soon?"soon":""}">
+        <div class="num">${soon?"即將":r.etaMin}</div>
+        <div class="unit">${soon?"進站":"分鐘"}</div>
+      </div>
+    </div>`;
+  }).join("");
+}
+function renderEmpty(pos,red){
+  const near=[...red].map(m=>({...m,d:haversine(pos.lat,pos.lon,m.lat,m.lon)})).sort((a,b)=>a.d-b.d).slice(0,3);
+  $("#panel").hidden=false;
+  $("#panel").innerHTML=`<div class="panel">
+    <h2>附近沒有直達紅線的車</h2>
+    <p>目前 ${MAX_ETA_MIN} 分鐘內沒有可往紅線方向的公車。建議直接叫計程車到最近的紅線站：</p>
+    <ul class="taxi-list">${near.map(m=>`<li><span>${escapeHtml(m.name)}站</span><span class="d">約 ${Math.round(m.d)} 公尺</span></li>`).join("")}</ul>
+  </div>`;
+  setStatus("");
+}
+function renderError(err){
+  let title="出了點問題", msg="請稍後再試一次。", detail="";
+  if(err.kind==="nokey"){ title="還沒設定 TDX 金鑰"; msg="點右下「設定」貼上 Client Id 與 Secret（到 tdx.transportdata.tw 免費註冊取得），存檔後再查一次。"; }
+  else if(err.kind==="auth"){ title="金鑰無法驗證"; msg="Client Id 或 Secret 可能填錯，請到「設定」確認後重存。"; }
+  else if(err.kind==="geo"){ title="拿不到你的位置"; msg="請允許瀏覽器定位權限；或改用上方的「手動座標」模式直接輸入位置。"; }
+  else if(err.kind==="rate"){ title="查詢太頻繁"; msg="TDX 流量達到上限，請過一下再查。"; }
+  else if(err.kind==="api"){ title="TDX 回應錯誤"; msg="伺服器回傳狀態碼 "+err.status+"，請稍後再試。"; detail=err.path||""; }
+  else if(err.kind==="network"){
+    title="連不上 TDX";
+    msg="瀏覽器擋下了「"+(err.where||"")+"」的請求。最常見原因：①現在是在預覽視窗或直接開檔案 → 請先把網頁放到 https 網址（例如 Netlify）再開；②瀏覽器跨域（CORS）限制。如果放到 https 仍出現這個錯，代表 TDX 不允許純前端直接呼叫，需要加一個小型代理（我可以幫你做）。";
+    detail=String(err.detail||"");
+  } else {
+    detail=String((err&&err.message)||err||"");
+  }
+  $("#panel").hidden=false;
+  $("#panel").innerHTML=`<div class="panel error"><h2>${escapeHtml(title)}</h2><p style="margin:0 0 ${detail?"8px":"0"}">${msg}</p>${detail?`<p style="margin:0;font-size:12px;color:var(--slate)">技術細節：${escapeHtml(detail)}</p>`:""}</div>`;
+  setStatus("");
+}
+function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+
+/* ====== 設定面板 ====== */
+function openSettings(){ $("#settings").classList.add("open"); $("#settings").scrollIntoView({behavior:"smooth"}); }
+$("#toggleSettings").addEventListener("click",()=>$("#settings").classList.toggle("open"));
+$("#save").addEventListener("click",()=>{
+  const id=$("#cid").value.trim(), secret=$("#csec").value.trim();
+  if(id){ safeLS.set("tdx_id",id); MEM.id=id; }
+  if(secret){ safeLS.set("tdx_secret",secret); MEM.secret=secret; }
+  _token=null;
+  $("#settings").classList.remove("open");
+  setStatus("設定已儲存。");
+});
+// 預填已存的金鑰（方便修改）
+$("#cid").value=safeLS.get("tdx_id")||"";
+$("#csec").value=safeLS.get("tdx_secret")||"";
+
+$("#go").addEventListener("click",run);
+
+// 切換 GPS / 手動座標
+$("#seg").addEventListener("click",e=>{
+  const b=e.target.closest(".seg-btn"); if(!b) return;
+  locMode=b.dataset.mode;
+  document.querySelectorAll(".seg-btn").forEach(x=>x.classList.toggle("active",x===b));
+  $("#manualBox").hidden = (locMode!=="manual");
+});
+</script>
+</body>
+</html>
