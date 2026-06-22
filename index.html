@@ -161,7 +161,8 @@ const CONFIG = {
 
 /* ====== 參數 ====== */
 const TOKEN_URL = "https://tdx.transportdata.tw/auth/realms/TDXConnect/protocol/openid-connect/token";
-const BASE = "https://tdx.transportdata.tw/api/basic";
+const BASE_BASIC = "https://tdx.transportdata.tw/api/basic";        // 基礎服務：路線站序、捷運站
+const BASE_ADVANCED = "https://tdx.transportdata.tw/api/advanced";  // 進階服務：附近(NearBy)
 const CITY = "Taipei";          // 台北市；新北市的公車改成 "NewTaipei"
 const RED_PREFIX = "R";         // 淡水信義線捷運站代碼皆以 R 開頭
 const SEARCH_RADIUS_M = 400;    // 搜尋附近公車站半徑
@@ -205,12 +206,12 @@ async function getToken(){
   _token=j.access_token; _exp=Date.now()+ (j.expires_in||86400)*1000;
   return _token;
 }
-async function tdx(path,params){
+async function tdx(path,params,base){
   const token=await getToken();
   const q=new URLSearchParams(params||{}); q.set("$format","JSON");
   let r;
   try{
-    r=await fetch(BASE+path+"?"+q.toString(),{headers:{authorization:"Bearer "+token}});
+    r=await fetch((base||BASE_BASIC)+path+"?"+q.toString(),{headers:{authorization:"Bearer "+token}});
   }catch(e){ throw {kind:"network",where:path,detail:String((e&&e.message)||e)}; }
   if(r.status===429) throw {kind:"rate"};
   if(!r.ok) throw {kind:"api",status:r.status,path};
@@ -229,8 +230,9 @@ async function getRedStations(){
   return out;
 }
 async function getNearbyETAs(lat,lon,radius){
-  const sf=`nearby(${lat.toFixed(6)}, ${lon.toFixed(6)}, ${Math.round(radius)})`;
-  return tdx("/v2/Bus/EstimatedTimeOfArrival/NearBy",{$spatialFilter:sf,$top:200});
+  const r=Math.min(Math.max(Math.round(radius),50),1000); // API 上限 1000m
+  const sf=`nearby(${lat.toFixed(6)}, ${lon.toFixed(6)}, ${r})`;
+  return tdx("/v2/Bus/EstimatedTimeOfArrival/NearBy",{$spatialFilter:sf,$top:200},BASE_ADVANCED);
 }
 const _sorCache={};
 async function getStopOfRoute(route){
@@ -378,7 +380,11 @@ function renderError(err){
   else if(err.kind==="auth"){ title="金鑰無法驗證"; msg="Client Id 或 Secret 可能填錯，請到「設定」確認後重存。"; }
   else if(err.kind==="geo"){ title="拿不到你的位置"; msg="請允許瀏覽器定位權限；或改用上方的「手動座標」模式直接輸入位置。"; }
   else if(err.kind==="rate"){ title="查詢太頻繁"; msg="TDX 流量達到上限，請過一下再查。"; }
-  else if(err.kind==="api"){ title="TDX 回應錯誤"; msg="伺服器回傳狀態碼 "+err.status+"，請稍後再試。"; detail=err.path||""; }
+  else if(err.kind==="api"){
+    if(err.status===401||err.status===403){ title="進階服務可能未開通"; msg="附近查詢用到 TDX 的「進階服務」。請到 TDX 會員中心確認你的方案有含進階服務（一般會員預設多半有）；若剛申請，有時需要一點時間生效。"; }
+    else { title="TDX 回應錯誤"; msg="伺服器回傳狀態碼 "+err.status+"，請稍後再試。"; }
+    detail=err.path||"";
+  }
   else if(err.kind==="network"){
     title="連不上 TDX";
     msg="瀏覽器擋下了「"+(err.where||"")+"」的請求。最常見原因：①現在是在預覽視窗或直接開檔案 → 請先把網頁放到 https 網址（例如 Netlify）再開；②瀏覽器跨域（CORS）限制。如果放到 https 仍出現這個錯，代表 TDX 不允許純前端直接呼叫，需要加一個小型代理（我可以幫你做）。";
