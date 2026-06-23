@@ -71,6 +71,9 @@
   .manual-box>div{flex:1}
   .manual-box label{display:block;font-size:12px;font-weight:700;color:var(--slate);margin:0 0 5px 2px}
   .manual-box input{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;font-size:15px;font-family:inherit;background:#fff;font-variant-numeric:tabular-nums}
+  .dir-seg{margin-top:10px}
+  .dir-seg .seg-btn{font-size:14px}
+  .dir-seg .seg-btn.active{background:var(--red)}
 
   .badge{flex:0 0 auto;min-width:54px;height:42px;padding:0 11px;border-radius:10px;
     background:var(--red);color:#fff;font-weight:800;font-size:18px;
@@ -129,6 +132,7 @@
     -webkit-tap-highlight-color:transparent;transition:background .12s,border-color .12s}
   .chip.active{background:var(--red);border-color:var(--red);color:#fff}
   .chip.all.active{background:var(--ink);border-color:var(--ink)}
+  .dest-co .chip.all{display:none}  /* 紅線到公司模式：沒有「全部」 */
 </style>
 </head>
 <body>
@@ -145,13 +149,17 @@
       <button class="seg-btn" data-mode="manual">✏️ 手動座標</button>
     </div>
     <div id="manualBox" class="manual-box" hidden>
-      <div><label>緯度</label><input id="mlat" value="25.1047732" inputmode="decimal"></div>
+      <div><label id="mlatLabel">緯度</label><input id="mlat" value="25.1047732" inputmode="decimal"></div>
       <div><label>經度</label><input id="mlon" value="121.5141796" inputmode="decimal"></div>
+    </div>
+    <div id="dirSeg" class="seg dir-seg" hidden>
+      <button class="seg-btn active" data-dir="toRed">🚌→🔴 往紅線</button>
+      <button class="seg-btn" data-dir="toCompany">🔴→🏢 紅線到公司</button>
     </div>
   </div>
 
   <div class="dest-box">
-    <label>目的地捷運站<span class="dest-hint">（可複選，不選＝全部）</span></label>
+    <label id="destLabel">目的地捷運站<span class="dest-hint">（可複選，不選＝全部）</span></label>
     <div id="dest" class="dest-chips"><button type="button" class="chip all" data-name="">全部</button></div>
   </div>
 
@@ -193,6 +201,7 @@ const CITY = "Taipei";          // 台北市；新北市的公車改成 "NewTaip
 const RED_PREFIX = "R";         // 淡水信義線捷運站代碼皆以 R 開頭
 const SEARCH_RADIUS_M = 400;    // 搜尋附近公車站半徑
 const MRT_MATCH_M = 200;        // 公車站離捷運站多近算「到得了」
+const COMPANY_MATCH_M = 400;    // 「紅線到公司」模式：公車站離公司座標多近算「到得了」
 const MAX_ETA_MIN = 60;         // 只列 N 分鐘內進站的車
 const WALK_SPEED_MPM = 80;      // 走路速度（公尺/分鐘），用來估「幾點要出發」
 const DEFAULT_DEST = "明德";    // 預設選好的目的地捷運站（""＝全部；可填多個用逗號分隔）
@@ -294,9 +303,25 @@ function reachesRedAfter(stops,boardSeq,red){
   }
   return best;
 }
+// 「紅線到公司」模式：上車後是否有下游站牌到「公司座標」附近；回傳最少站數那班的下車站
+function reachesPointAfter(stops,boardSeq,lat,lon){
+  let best=null;
+  for(const st of stops){
+    if(st.seq==null||boardSeq==null||st.seq<=boardSeq) continue;
+    if(st.lat==null||st.lon==null) continue;
+    const d=haversine(st.lat,st.lon,lat,lon);
+    if(d<=COMPANY_MATCH_M){
+      const ride=st.seq-boardSeq;
+      if(!best||ride<best.ride) best={ride,getOff:st.name,getOffLat:st.lat,getOffLon:st.lon};
+    }
+  }
+  return best;
+}
 
 /* ====== 定位 ====== */
 let locMode="gps";
+// 搜尋方向："toRed"＝附近往紅線（預設）；"toCompany"＝從選定捷運站搭公車到公司座標（限手動座標）
+let searchDir="toRed";
 function getPosition(){
   if(locMode==="manual"){
     const mlat=parseFloat($("#mlat").value), mlon=parseFloat($("#mlon").value);
@@ -332,55 +357,119 @@ async function run(){
     setStatus("定位中…");
     const pos=await getPosition();
     if(!pos) throw {kind:"geo"};
-    setStatus(pos.manual?"使用手動座標…":pos.fallback?"GPS 不可用，改用預設地點（文承路26號）查詢…":"已定位，查詢附近公車…");
-
-    const [red,etas]=await Promise.all([getRedStations(), getNearbyETAs(pos.lat,pos.lon,SEARCH_RADIUS_M)]);
-    populateDest(red);
-    // 依已選膠囊篩選目的地捷運站；沒選或都不存在就用全部
-    let redUse=_destSel.size?red.filter(m=>_destSel.has(m.name)):red;
-    if(!redUse.length) redUse=red;
-
-    // 每個(路線,方向,站牌)取最近一班
-    const cand=new Map();
-    for(const e of etas){
-      if((e.StopStatus??0)!==0) continue;
-      const eta=e.EstimateTime;
-      if(eta==null||eta>MAX_ETA_MIN*60) continue;
-      const route=(e.RouteName&&e.RouteName.Zh_tw)||"";
-      const key=[route,e.Direction??0,e.StopUID||"",(e.StopName&&e.StopName.Zh_tw)||"",e.StopSequence].join("|");
-      if(!cand.has(key)||eta<cand.get(key).eta)
-        cand.set(key,{route,dir:e.Direction??0,uid:e.StopUID||"",stop:(e.StopName&&e.StopName.Zh_tw)||"",seq:e.StopSequence,eta});
+    if(searchDir==="toCompany"){
+      setStatus("以公司座標查詢…");
+      await runToCompany(pos);
+    }else{
+      setStatus(pos.manual?"使用手動座標…":pos.fallback?"GPS 不可用，改用預設地點（文承路26號）查詢…":"已定位，查詢附近公車…");
+      await runToRed(pos);
     }
-
-    // 補各路線站序（去重、並行）
-    const routes=[...new Set([...cand.values()].map(c=>c.route))];
-    await Promise.all(routes.map(getStopOfRoute));
-
-    const results=[];
-    for(const c of cand.values()){
-      const stops=(_sorCache[c.route]||{})[c.dir]||[];
-      let boardPos=null, boardSeq=c.seq;
-      for(const st of stops){ if(st.uid===c.uid){ boardPos=st; if(boardSeq==null) boardSeq=st.seq; break; } }
-      const hit=reachesRedAfter(stops,boardSeq,redUse);
-      if(!hit) continue;
-      const walk=boardPos&&boardPos.lat?haversine(pos.lat,pos.lon,boardPos.lat,boardPos.lon):null;
-      results.push({route:c.route,stop:c.stop,etaMin:Math.round(c.eta/60),mrt:hit.mrt,ride:hit.ride,getOff:hit.getOff,walk,
-        fromLat:pos.lat,fromLon:pos.lon,
-        boardLat:boardPos&&boardPos.lat,boardLon:boardPos&&boardPos.lon,
-        getOffLat:hit.getOffLat,getOffLon:hit.getOffLon,
-        mrtLat:hit.mrtLat,mrtLon:hit.mrtLon});
-    }
-
-    if(!results.length){ renderEmpty(pos,redUse); return; }
-    results.sort((a,b)=>((a.walk??9999)-(b.walk??9999))||(a.etaMin-b.etaMin));
-    renderResults(results);
-    setStatus(`找到 ${results.length} 個選擇 · ${new Date().toLocaleTimeString("zh-TW",{hour:"2-digit",minute:"2-digit"})} 更新`);
   }catch(err){
     renderError(err);
   }finally{
     btn.disabled=false; btn.innerHTML='🔴&nbsp; 重新查詢';
   }
 }
+
+// 模式①：用「你的位置」找附近往紅線方向的車
+async function runToRed(pos){
+  const [red,etas]=await Promise.all([getRedStations(), getNearbyETAs(pos.lat,pos.lon,SEARCH_RADIUS_M)]);
+  populateDest(red);
+  // 依已選膠囊篩選目的地捷運站；沒選或都不存在就用全部
+  let redUse=_destSel.size?red.filter(m=>_destSel.has(m.name)):red;
+  if(!redUse.length) redUse=red;
+
+  const cand=dedupeETAs(etas);
+  const routes=[...new Set([...cand.values()].map(c=>c.route))];
+  await Promise.all(routes.map(getStopOfRoute));
+
+  const results=[];
+  for(const c of cand.values()){
+    const stops=(_sorCache[c.route]||{})[c.dir]||[];
+    let boardPos=null, boardSeq=c.seq;
+    for(const st of stops){ if(st.uid===c.uid){ boardPos=st; if(boardSeq==null) boardSeq=st.seq; break; } }
+    const hit=reachesRedAfter(stops,boardSeq,redUse);
+    if(!hit) continue;
+    const walk=boardPos&&boardPos.lat?haversine(pos.lat,pos.lon,boardPos.lat,boardPos.lon):null;
+    results.push({dir:"toRed",route:c.route,stop:c.stop,etaMin:Math.round(c.eta/60),mrt:hit.mrt,ride:hit.ride,getOff:hit.getOff,walk,
+      fromLat:pos.lat,fromLon:pos.lon,
+      boardLat:boardPos&&boardPos.lat,boardLon:boardPos&&boardPos.lon,
+      getOffLat:hit.getOffLat,getOffLon:hit.getOffLon,
+      mrtLat:hit.mrtLat,mrtLon:hit.mrtLon});
+  }
+
+  if(!results.length){ renderEmpty(pos,redUse); return; }
+  results.sort((a,b)=>((a.walk??9999)-(b.walk??9999))||(a.etaMin-b.etaMin));
+  renderResults(results);
+  setStatus(`找到 ${results.length} 個選擇 · ${nowHm()} 更新`);
+}
+
+// 模式②：從選定的幾個捷運站附近，找能開到「公司座標」(pos) 附近的車
+async function runToCompany(pos){
+  const red=await getRedStations();
+  populateDest(red);
+  const origins=red.filter(m=>_destSel.has(m.name));
+  if(!origins.length) throw {kind:"noorigin"};   // 此模式至少要選一個出發捷運站
+
+  // 在每個出發捷運站附近各查一次 NearBy（並行；單站失敗不影響其他）
+  const etaLists=await Promise.all(origins.map(o=>getNearbyETAs(o.lat,o.lon,SEARCH_RADIUS_M).catch(()=>[])));
+
+  // 合併候選，並記住每班車是從哪個捷運站附近上車
+  const cand=new Map();
+  origins.forEach((o,i)=>{
+    for(const e of etaLists[i]){
+      if((e.StopStatus??0)!==0) continue;
+      const eta=e.EstimateTime;
+      if(eta==null||eta>MAX_ETA_MIN*60) continue;
+      const route=(e.RouteName&&e.RouteName.Zh_tw)||"";
+      const stop=(e.StopName&&e.StopName.Zh_tw)||"";
+      const key=[o.name,route,e.Direction??0,e.StopUID||"",stop,e.StopSequence].join("|");
+      if(!cand.has(key)||eta<cand.get(key).eta)
+        cand.set(key,{origin:o,route,dir:e.Direction??0,uid:e.StopUID||"",stop,seq:e.StopSequence,eta});
+    }
+  });
+
+  const routes=[...new Set([...cand.values()].map(c=>c.route))];
+  await Promise.all(routes.map(getStopOfRoute));
+
+  const results=[];
+  for(const c of cand.values()){
+    const stops=(_sorCache[c.route]||{})[c.dir]||[];
+    let boardPos=null, boardSeq=c.seq;
+    for(const st of stops){ if(st.uid===c.uid){ boardPos=st; if(boardSeq==null) boardSeq=st.seq; break; } }
+    const hit=reachesPointAfter(stops,boardSeq,pos.lat,pos.lon);
+    if(!hit) continue;
+    // 走路距離：從出發捷運站走到上車站牌
+    const walk=boardPos&&boardPos.lat?haversine(c.origin.lat,c.origin.lon,boardPos.lat,boardPos.lon):null;
+    results.push({dir:"toCompany",route:c.route,stop:c.stop,etaMin:Math.round(c.eta/60),
+      originMrt:c.origin.name,ride:hit.ride,getOff:hit.getOff,walk,
+      fromLat:c.origin.lat,fromLon:c.origin.lon,
+      boardLat:boardPos&&boardPos.lat,boardLon:boardPos&&boardPos.lon,
+      getOffLat:hit.getOffLat,getOffLon:hit.getOffLon,
+      mrtLat:pos.lat,mrtLon:pos.lon});   // mrtLat/Lon 此模式代表「公司」終點
+  }
+
+  if(!results.length){ renderEmptyCompany(origins); return; }
+  results.sort((a,b)=>((a.walk??9999)-(b.walk??9999))||(a.etaMin-b.etaMin));
+  renderResults(results);
+  setStatus(`找到 ${results.length} 個選擇 · ${nowHm()} 更新`);
+}
+
+// 每個(路線,方向,站牌)取最近一班
+function dedupeETAs(etas){
+  const cand=new Map();
+  for(const e of etas){
+    if((e.StopStatus??0)!==0) continue;
+    const eta=e.EstimateTime;
+    if(eta==null||eta>MAX_ETA_MIN*60) continue;
+    const route=(e.RouteName&&e.RouteName.Zh_tw)||"";
+    const key=[route,e.Direction??0,e.StopUID||"",(e.StopName&&e.StopName.Zh_tw)||"",e.StopSequence].join("|");
+    if(!cand.has(key)||eta<cand.get(key).eta)
+      cand.set(key,{route,dir:e.Direction??0,uid:e.StopUID||"",stop:(e.StopName&&e.StopName.Zh_tw)||"",seq:e.StopSequence,eta});
+  }
+  return cand;
+}
+function nowHm(){ return new Date().toLocaleTimeString("zh-TW",{hour:"2-digit",minute:"2-digit"}); }
 
 /* ====== 畫面 ====== */
 // 已選的目的地捷運站名集合（空＝全部）；以 DEFAULT_DEST 為預設
@@ -415,6 +504,8 @@ function navLink(url,label){
 function renderResults(list){
   const box=$("#results"); box.className="results"; box.hidden=false;
   box.innerHTML=list.map(r=>{
+    const isCo=r.dir==="toCompany";
+    const destLabel=isCo?"公司":`${escapeHtml(r.mrt)}站`;
     const soon=r.etaMin<=1;
     const walk=r.walk!=null?`走路約 ${Math.round(r.walk)} 公尺`:"附近站牌";
     const navWalkOn=gmapDir(r.fromLat,r.fromLon,r.boardLat,r.boardLon,"walking");
@@ -423,13 +514,17 @@ function renderResults(list){
     const nav=[
       navLink(navWalkOn,"🚶 到上車站"),
       navLink(navBus,"🚌 公車路線"),
-      navLink(navWalkMrt,"🚶 到捷運站")
+      navLink(navWalkMrt,isCo?"🚶 到公司":"🚶 到捷運站")
     ].join("");
-    // 下車站到捷運站的步行距離
+    // 第一行資訊：往紅線＝走路到上車站＋到 X 站；到公司＝從 X 站走到上車站＋坐幾站到公司
+    const firstLine=isCo
+      ?`<span>從 ${escapeHtml(r.originMrt)}站 走 ${r.walk!=null?Math.round(r.walk)+" 公尺":""}到站牌</span><span class="mrt">約坐 ${r.ride} 站到公司</span>`
+      :`<span>${walk}</span><span class="mrt">到 ${escapeHtml(r.mrt)}站 · 約坐 ${r.ride} 站</span>`;
+    // 下車站到終點（捷運站／公司）的步行距離
     let toMrt="";
     if(r.getOffLat!=null&&r.mrtLat!=null){
       const d=Math.round(haversine(r.getOffLat,r.getOffLon,r.mrtLat,r.mrtLon));
-      toMrt=`，再走約 ${d} 公尺到 ${escapeHtml(r.mrt)}站`;
+      toMrt=`，再走約 ${d} 公尺到 ${destLabel}`;
     }
     // 走路時間 + 幾點出發（公車進站時間 - 走路時間）
     let depart="";
@@ -456,7 +551,7 @@ function renderResults(list){
         </div>
       </div>
       <div class="info">
-        <div class="meta"><span>${walk}</span><span class="mrt">到 ${escapeHtml(r.mrt)}站 · 約坐 ${r.ride} 站</span></div>
+        <div class="meta">${firstLine}</div>
         ${r.getOff?`<div class="meta getoff"><span>🚏 在「${escapeHtml(r.getOff)}」站下車${toMrt}</span></div>`:""}
         ${depart}
       </div>
@@ -474,11 +569,20 @@ function renderEmpty(pos,red){
   </div>`;
   setStatus("");
 }
+function renderEmptyCompany(origins){
+  $("#panel").hidden=false;
+  $("#panel").innerHTML=`<div class="panel">
+    <h2>這些捷運站附近沒有到公司的車</h2>
+    <p>從 ${escapeHtml(origins.map(o=>o.name+"站").join("、"))} 出發，目前 ${MAX_ETA_MIN} 分鐘內沒有會開到公司座標 ${COMPANY_MATCH_M} 公尺內的公車。可改選其他捷運站，或確認公司座標填對了。</p>
+  </div>`;
+  setStatus("");
+}
 function renderError(err){
   let title="出了點問題", msg="請稍後再試一次。", detail="";
   if(err.kind==="nokey"){ title="還沒設定 TDX 金鑰"; msg="點右下「設定」貼上 Client Id 與 Secret（到 tdx.transportdata.tw 免費註冊取得），存檔後再查一次。"; }
   else if(err.kind==="auth"){ title="金鑰無法驗證"; msg="Client Id 或 Secret 可能填錯，請到「設定」確認後重存。"; }
   else if(err.kind==="geo"){ title="拿不到你的位置"; msg="請允許瀏覽器定位權限；或改用上方的「手動座標」模式直接輸入位置。"; }
+  else if(err.kind==="noorigin"){ title="先選出發捷運站"; msg="「紅線到公司」模式要先在下面點選至少一個出發捷運站（你會在哪幾站下車轉公車），再按查詢。"; }
   else if(err.kind==="rate"){ title="查詢太頻繁"; msg="TDX 流量達到上限，請過一下再查。"; }
   else if(err.kind==="api"){
     if(err.status===401||err.status===403){ title="進階服務可能未開通"; msg="附近查詢用到 TDX 的「進階服務」。請到 TDX 會員中心確認你的方案有含進階服務（一般會員預設多半有）；若剛申請，有時需要一點時間生效。"; }
@@ -531,13 +635,42 @@ $("#dest").addEventListener("click",e=>{
   });
 });
 
+// 依目前 locMode / searchDir 調整 UI 文字與顯示
+function updateModeUI(){
+  // 方向切換鈕只在手動座標模式出現
+  $("#dirSeg").hidden = (locMode!=="manual");
+  // 切回 GPS 時，公司模式沒意義（需要公司座標）→ 退回往紅線
+  if(locMode!=="manual" && searchDir==="toCompany"){
+    searchDir="toRed";
+    $("#dirSeg").querySelectorAll(".seg-btn").forEach(x=>x.classList.toggle("active",x.dataset.dir==="toRed"));
+  }
+  const co=searchDir==="toCompany";
+  $("#destLabel").innerHTML = co
+    ? '出發捷運站<span class="dest-hint">（會在哪幾站下車轉公車，至少選一個）</span>'
+    : '目的地捷運站<span class="dest-hint">（可複選，不選＝全部）</span>';
+  $("#dest").classList.toggle("dest-co", co);
+  $("#mlatLabel").textContent = co ? "緯度（公司）" : "緯度";
+  $("#go").innerHTML = co ? '🏢&nbsp; 查到公司的車' : '🔴&nbsp; 查附近的車';
+}
+
 // 切換 GPS / 手動座標
 $("#seg").addEventListener("click",e=>{
   const b=e.target.closest(".seg-btn"); if(!b) return;
   locMode=b.dataset.mode;
-  document.querySelectorAll(".seg-btn").forEach(x=>x.classList.toggle("active",x===b));
+  $("#seg").querySelectorAll(".seg-btn").forEach(x=>x.classList.toggle("active",x===b));
   $("#manualBox").hidden = (locMode!=="manual");
+  updateModeUI();
 });
+
+// 切換搜尋方向（往紅線 / 紅線到公司）
+$("#dirSeg").addEventListener("click",e=>{
+  const b=e.target.closest(".seg-btn"); if(!b) return;
+  searchDir=b.dataset.dir;
+  $("#dirSeg").querySelectorAll(".seg-btn").forEach(x=>x.classList.toggle("active",x===b));
+  updateModeUI();
+});
+
+updateModeUI();
 </script>
 </body>
 </html>
