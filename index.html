@@ -56,9 +56,10 @@
 
   .card{position:relative;background:var(--card);border:1px solid var(--line);border-radius:14px;
     padding:14px 16px;margin-bottom:14px;box-shadow:var(--shadow);
-    display:flex;align-items:center;gap:14px;animation:rise .32s ease both}
-  .card::before{content:"";position:absolute;left:-23px;top:50%;transform:translateY(-50%);
+    display:block;animation:rise .32s ease both}
+  .card::before{content:"";position:absolute;left:-23px;top:27px;
     width:13px;height:13px;border-radius:50%;background:#fff;border:3.5px solid var(--red)}
+  .card .top{display:flex;align-items:center;gap:12px}
   @keyframes rise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 
   /* 定位模式切換 */
@@ -71,15 +72,26 @@
   .manual-box label{display:block;font-size:12px;font-weight:700;color:var(--slate);margin:0 0 5px 2px}
   .manual-box input{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;font-size:15px;font-family:inherit;background:#fff;font-variant-numeric:tabular-nums}
 
-  .badge{flex:0 0 auto;min-width:52px;height:40px;padding:0 10px;border-radius:9px;
-    background:var(--red);color:#fff;font-weight:800;font-size:17px;
+  .badge{flex:0 0 auto;min-width:54px;height:42px;padding:0 11px;border-radius:10px;
+    background:var(--red);color:#fff;font-weight:800;font-size:18px;
     display:flex;align-items:center;justify-content:center;letter-spacing:.01em}
-  .mid{flex:1 1 auto;min-width:0}
-  .stop{font-weight:700;font-size:16px;line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .meta{font-size:13px;color:var(--slate);margin-top:3px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+  .stop{flex:1 1 auto;min-width:0;font-weight:800;font-size:18px;line-height:1.2;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .info{margin-top:10px;display:flex;flex-direction:column;gap:5px}
+  .meta{font-size:14px;color:var(--slate);display:flex;align-items:center;gap:6px;flex-wrap:wrap}
   .mrt{display:inline-flex;align-items:center;gap:5px}
-  .mrt::before{content:"";width:9px;height:9px;border-radius:50%;background:var(--red)}
-  .eta{flex:0 0 auto;text-align:right;min-width:62px}
+  .mrt::before{content:"";width:9px;height:9px;border-radius:50%;background:var(--red);flex:0 0 auto}
+  .meta.getoff{font-weight:700;color:var(--ink)}
+  .meta.depart{font-weight:800;color:var(--go)}
+  .meta.depart.late{color:var(--red)}
+  .nav{display:flex;gap:8px;margin-top:12px}
+  .nav-btn{flex:1 1 0;display:inline-flex;align-items:center;justify-content:center;gap:5px;
+    font-size:13px;font-weight:700;color:var(--ink);text-decoration:none;
+    background:#F1F3F5;border:1px solid #E3E6EA;border-radius:11px;
+    min-height:44px;padding:0 6px;line-height:1.15;text-align:center;
+    -webkit-tap-highlight-color:transparent}
+  .nav-btn:active{background:#E3E6EA}
+  .eta{flex:0 0 auto;text-align:right;min-width:56px}
   .eta .num{font-size:30px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
   .eta .unit{font-size:12px;color:var(--slate);font-weight:600}
   .eta.soon .num{color:var(--go)}
@@ -108,6 +120,15 @@
   .settings .row>div{flex:1}
   .save{margin-top:14px;width:100%;border:0;background:var(--ink);color:#fff;border-radius:11px;padding:13px;font-weight:700;font-size:15px;cursor:pointer;font-family:inherit}
   .hint{font-size:12px;color:var(--slate);margin-top:8px;line-height:1.45}
+  .dest-box{margin:12px 0}
+  .dest-box label{display:block;font-size:13px;color:var(--slate);font-weight:600;margin-bottom:8px}
+  .dest-hint{font-weight:400;color:var(--slate);opacity:.8}
+  .dest-chips{display:flex;flex-wrap:wrap;gap:7px}
+  .chip{font-size:14px;font-weight:600;color:var(--ink);background:#fff;border:1px solid var(--line);
+    border-radius:999px;padding:8px 13px;line-height:1;cursor:pointer;font-family:inherit;
+    -webkit-tap-highlight-color:transparent;transition:background .12s,border-color .12s}
+  .chip.active{background:var(--red);border-color:var(--red);color:#fff}
+  .chip.all.active{background:var(--ink);border-color:var(--ink)}
 </style>
 </head>
 <body>
@@ -127,6 +148,11 @@
       <div><label>緯度</label><input id="mlat" value="25.1047732" inputmode="decimal"></div>
       <div><label>經度</label><input id="mlon" value="121.5141796" inputmode="decimal"></div>
     </div>
+  </div>
+
+  <div class="dest-box">
+    <label>目的地捷運站<span class="dest-hint">（可複選，不選＝全部）</span></label>
+    <div id="dest" class="dest-chips"><button type="button" class="chip all" data-name="">全部</button></div>
   </div>
 
   <button id="go" class="go-btn">🔴&nbsp; 查附近的車</button>
@@ -168,6 +194,8 @@ const RED_PREFIX = "R";         // 淡水信義線捷運站代碼皆以 R 開頭
 const SEARCH_RADIUS_M = 400;    // 搜尋附近公車站半徑
 const MRT_MATCH_M = 200;        // 公車站離捷運站多近算「到得了」
 const MAX_ETA_MIN = 60;         // 只列 N 分鐘內進站的車
+const WALK_SPEED_MPM = 80;      // 走路速度（公尺/分鐘），用來估「幾點要出發」
+const DEFAULT_DEST = "明德";    // 預設選好的目的地捷運站（""＝全部；可填多個用逗號分隔）
 
 /* ====== 小工具 ====== */
 const $ = s => document.querySelector(s);
@@ -259,7 +287,8 @@ function reachesRedAfter(stops,boardSeq,red){
     for(const m of red){
       if(haversine(st.lat,st.lon,m.lat,m.lon)<=MRT_MATCH_M){
         const ride=st.seq-boardSeq;
-        if(!best||ride<best.ride) best={mrt:m.name,ride};
+        if(!best||ride<best.ride) best={mrt:m.name,ride,getOff:st.name,
+          getOffLat:st.lat,getOffLon:st.lon,mrtLat:m.lat,mrtLon:m.lon};
       }
     }
   }
@@ -306,6 +335,10 @@ async function run(){
     setStatus(pos.manual?"使用手動座標…":pos.fallback?"GPS 不可用，改用預設地點（文承路26號）查詢…":"已定位，查詢附近公車…");
 
     const [red,etas]=await Promise.all([getRedStations(), getNearbyETAs(pos.lat,pos.lon,SEARCH_RADIUS_M)]);
+    populateDest(red);
+    // 依已選膠囊篩選目的地捷運站；沒選或都不存在就用全部
+    let redUse=_destSel.size?red.filter(m=>_destSel.has(m.name)):red;
+    if(!redUse.length) redUse=red;
 
     // 每個(路線,方向,站牌)取最近一班
     const cand=new Map();
@@ -328,13 +361,17 @@ async function run(){
       const stops=(_sorCache[c.route]||{})[c.dir]||[];
       let boardPos=null, boardSeq=c.seq;
       for(const st of stops){ if(st.uid===c.uid){ boardPos=st; if(boardSeq==null) boardSeq=st.seq; break; } }
-      const hit=reachesRedAfter(stops,boardSeq,red);
+      const hit=reachesRedAfter(stops,boardSeq,redUse);
       if(!hit) continue;
       const walk=boardPos&&boardPos.lat?haversine(pos.lat,pos.lon,boardPos.lat,boardPos.lon):null;
-      results.push({route:c.route,stop:c.stop,etaMin:Math.round(c.eta/60),mrt:hit.mrt,ride:hit.ride,walk});
+      results.push({route:c.route,stop:c.stop,etaMin:Math.round(c.eta/60),mrt:hit.mrt,ride:hit.ride,getOff:hit.getOff,walk,
+        fromLat:pos.lat,fromLon:pos.lon,
+        boardLat:boardPos&&boardPos.lat,boardLon:boardPos&&boardPos.lon,
+        getOffLat:hit.getOffLat,getOffLon:hit.getOffLon,
+        mrtLat:hit.mrtLat,mrtLon:hit.mrtLon});
     }
 
-    if(!results.length){ renderEmpty(pos,red); return; }
+    if(!results.length){ renderEmpty(pos,redUse); return; }
     results.sort((a,b)=>((a.walk??9999)-(b.walk??9999))||(a.etaMin-b.etaMin));
     renderResults(results);
     setStatus(`找到 ${results.length} 個選擇 · ${new Date().toLocaleTimeString("zh-TW",{hour:"2-digit",minute:"2-digit"})} 更新`);
@@ -346,21 +383,84 @@ async function run(){
 }
 
 /* ====== 畫面 ====== */
+// 已選的目的地捷運站名集合（空＝全部）；以 DEFAULT_DEST 為預設
+const _destSel=new Set(DEFAULT_DEST.split(",").map(s=>s.trim()).filter(Boolean));
+// 用紅線站清單渲染「目的地捷運站」可複選膠囊，保留目前選擇
+function populateDest(stations){
+  const box=$("#dest"); if(!box||!stations||!stations.length) return;
+  // 校正選擇：精準站名留著；對不上的試著用包含關係比對（例如「明德」↔「明德站」），都對不上才丟掉
+  const names=new Set(stations.map(m=>m.name));
+  for(const n of [..._destSel]){
+    if(names.has(n)) continue;
+    const m=stations.find(s=>s.name.includes(n)||n.includes(s.name));
+    _destSel.delete(n);
+    if(m) _destSel.add(m.name);
+  }
+  const allActive=_destSel.size===0?" active":"";
+  box.innerHTML=`<button type="button" class="chip all${allActive}" data-name="">全部</button>`
+    +stations.map(m=>{
+      const on=_destSel.has(m.name)?" active":"";
+      return `<button type="button" class="chip${on}" data-name="${escapeHtml(m.name)}">${escapeHtml(m.name)}</button>`;
+    }).join("");
+}
+// 產生 Google Maps 路線導航連結；座標不齊就回傳 null（該按鈕不顯示）
+function gmapDir(oLat,oLon,dLat,dLon,mode){
+  if(oLat==null||oLon==null||dLat==null||dLon==null) return null;
+  return `https://www.google.com/maps/dir/?api=1`
+    +`&origin=${oLat},${oLon}&destination=${dLat},${dLon}&travelmode=${mode}`;
+}
+function navLink(url,label){
+  return url?`<a class="nav-btn" href="${url}" target="_blank" rel="noopener">${label}</a>`:"";
+}
 function renderResults(list){
   const box=$("#results"); box.className="results"; box.hidden=false;
   box.innerHTML=list.map(r=>{
     const soon=r.etaMin<=1;
     const walk=r.walk!=null?`走路約 ${Math.round(r.walk)} 公尺`:"附近站牌";
+    const navWalkOn=gmapDir(r.fromLat,r.fromLon,r.boardLat,r.boardLon,"walking");
+    const navBus=gmapDir(r.boardLat,r.boardLon,r.getOffLat,r.getOffLon,"transit");
+    const navWalkMrt=gmapDir(r.getOffLat,r.getOffLon,r.mrtLat,r.mrtLon,"walking");
+    const nav=[
+      navLink(navWalkOn,"🚶 到上車站"),
+      navLink(navBus,"🚌 公車路線"),
+      navLink(navWalkMrt,"🚶 到捷運站")
+    ].join("");
+    // 下車站到捷運站的步行距離
+    let toMrt="";
+    if(r.getOffLat!=null&&r.mrtLat!=null){
+      const d=Math.round(haversine(r.getOffLat,r.getOffLon,r.mrtLat,r.mrtLon));
+      toMrt=`，再走約 ${d} 公尺到 ${escapeHtml(r.mrt)}站`;
+    }
+    // 走路時間 + 幾點出發（公車進站時間 - 走路時間）
+    let depart="";
+    if(r.walk!=null){
+      const walkMin=Math.max(1,Math.round(r.walk/WALK_SPEED_MPM));
+      const leaveIn=r.etaMin-walkMin;   // 還有幾分鐘該出發
+      if(leaveIn<0){
+        depart=`<div class="meta depart late"><span>🏃 走路約 ${walkMin} 分鐘 · 這班可能趕不上</span></div>`;
+      }else if(leaveIn===0){
+        depart=`<div class="meta depart late"><span>🏃 走路約 ${walkMin} 分鐘 · 現在就要出發</span></div>`;
+      }else{
+        const t=new Date(Date.now()+leaveIn*60000)
+          .toLocaleTimeString("zh-TW",{hour:"2-digit",minute:"2-digit"});
+        depart=`<div class="meta depart"><span>🚶 走路約 ${walkMin} 分鐘 · ${t} 出發</span></div>`;
+      }
+    }
     return `<div class="card">
-      <div class="badge">${escapeHtml(r.route)}</div>
-      <div class="mid">
+      <div class="top">
+        <div class="badge">${escapeHtml(r.route)}</div>
         <div class="stop">${escapeHtml(r.stop)}</div>
-        <div class="meta"><span>${walk}</span>·<span class="mrt">到 ${escapeHtml(r.mrt)}站 · 約坐 ${r.ride} 站</span></div>
+        <div class="eta ${soon?"soon":""}">
+          <div class="num">${soon?"即將":r.etaMin}</div>
+          <div class="unit">${soon?"進站":"分鐘"}</div>
+        </div>
       </div>
-      <div class="eta ${soon?"soon":""}">
-        <div class="num">${soon?"即將":r.etaMin}</div>
-        <div class="unit">${soon?"進站":"分鐘"}</div>
+      <div class="info">
+        <div class="meta"><span>${walk}</span><span class="mrt">到 ${escapeHtml(r.mrt)}站 · 約坐 ${r.ride} 站</span></div>
+        ${r.getOff?`<div class="meta getoff"><span>🚏 在「${escapeHtml(r.getOff)}」站下車${toMrt}</span></div>`:""}
+        ${depart}
       </div>
+      ${nav?`<div class="nav">${nav}</div>`:""}
     </div>`;
   }).join("");
 }
@@ -414,6 +514,22 @@ $("#cid").value=safeLS.get("tdx_id")||"";
 $("#csec").value=safeLS.get("tdx_secret")||"";
 
 $("#go").addEventListener("click",run);
+
+// 開頁先嘗試載入紅線站清單填入篩選器（沒金鑰就略過，等第一次查詢時再填）
+if(getKeys().id){ getRedStations().then(populateDest).catch(()=>{}); }
+// 點膠囊切換目的地；「全部」清空，其他則 toggle
+$("#dest").addEventListener("click",e=>{
+  const b=e.target.closest(".chip"); if(!b) return;
+  const name=b.dataset.name;
+  if(name===""){ _destSel.clear(); }
+  else if(_destSel.has(name)){ _destSel.delete(name); }
+  else { _destSel.add(name); }
+  // 更新 active 狀態（不自動查詢，等使用者按「查詢」）
+  $("#dest").querySelectorAll(".chip").forEach(c=>{
+    const n=c.dataset.name;
+    c.classList.toggle("active", n===""? _destSel.size===0 : _destSel.has(n));
+  });
+});
 
 // 切換 GPS / 手動座標
 $("#seg").addEventListener("click",e=>{
